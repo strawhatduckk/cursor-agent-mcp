@@ -45,8 +45,8 @@ func (a withAuth) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r)
 }
 
-// callTool calls a tool through the real HTTP handler with an MCP client.
-func callTool(t *testing.T, auth, name string, args map[string]any) *mcp.CallToolResult {
+// connect opens an MCP client session against the real HTTP handler.
+func connect(t *testing.T, auth string) *mcp.ClientSession {
 	t.Helper()
 	srv := httptest.NewServer(handler())
 	t.Cleanup(srv.Close)
@@ -59,8 +59,14 @@ func callTool(t *testing.T, auth, name string, args map[string]any) *mcp.CallToo
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
-	res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	t.Cleanup(func() { session.Close() })
+	return session
+}
+
+// callTool calls a tool through the real HTTP handler with an MCP client.
+func callTool(t *testing.T, auth, name string, args map[string]any) *mcp.CallToolResult {
+	t.Helper()
+	res, err := connect(t, auth).CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,6 +215,26 @@ func TestRejectsNonLocalHost(t *testing.T) {
 		handler().ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("Host %q: status %d, want 403", host, rec.Code)
+		}
+	}
+}
+
+// Clients warn on destructive tools, so only delete_agent and cancel_run
+// (both irreversible) should keep the MCP default destructiveHint=true.
+func TestDestructiveHints(t *testing.T) {
+	res, err := connect(t, "").ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"create_agent": false, "followup": false, "archive_agent": false, "delete_agent": true, "cancel_run": true}
+	for _, tool := range res.Tools {
+		w, ok := want[tool.Name]
+		if !ok {
+			continue
+		}
+		got := tool.Annotations == nil || tool.Annotations.DestructiveHint == nil || *tool.Annotations.DestructiveHint
+		if got != w {
+			t.Errorf("%s destructive = %v, want %v", tool.Name, got, w)
 		}
 	}
 }

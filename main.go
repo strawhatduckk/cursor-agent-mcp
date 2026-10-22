@@ -27,6 +27,10 @@ var httpClient = &http.Client{Timeout: 2 * time.Minute}
 
 var readOnly = &mcp.ToolAnnotations{ReadOnlyHint: true}
 
+// nonDestructive marks writes that only add or are reversible; without it
+// MCP defaults every non-read-only tool to destructive.
+var nonDestructive = &mcp.ToolAnnotations{DestructiveHint: new(bool)}
+
 func main() {
 	http.Handle("/mcp", handler())
 	log.Println("cursor-agent-mcp listening on :8080/mcp")
@@ -198,7 +202,7 @@ func newServer() *mcp.Server {
 	addTool(s, &mcp.Tool{Name: "me", Description: "Show info about the Cursor API key in use.", Annotations: readOnly},
 		func(noInput) (endpoint, error) { return endpoint{method: "GET", path: "/v1/me"}, nil })
 
-	addTool(s, &mcp.Tool{Name: "create_agent", Description: "Start a Cursor cloud agent, optionally on a repo. Returns the agent and its first run; poll get_run for status, result, branch and PR."},
+	addTool(s, &mcp.Tool{Name: "create_agent", Description: "Start a Cursor cloud agent, optionally on a repo. Returns the agent and its first run; poll get_run for status, result, branch and PR.", Annotations: nonDestructive},
 		func(in createAgentIn) (endpoint, error) {
 			if in.PrURL != "" && in.RepoURL == "" {
 				return endpoint{}, errors.New("pr_url requires repo_url")
@@ -247,7 +251,7 @@ func newServer() *mcp.Server {
 			return endpoint{method: "GET", path: p}, err
 		})
 
-	addTool(s, &mcp.Tool{Name: "followup", Description: "Send a follow-up prompt to an agent, starting a new run. Fails with agent_busy while a run is active."},
+	addTool(s, &mcp.Tool{Name: "followup", Description: "Send a follow-up prompt to an agent, starting a new run. Fails with agent_busy while a run is active.", Annotations: nonDestructive},
 		func(in followupIn) (endpoint, error) {
 			p, err := agentPath(in.AgentID, "runs")
 			body := map[string]any{"prompt": map[string]string{"text": in.Prompt}}
@@ -275,7 +279,7 @@ func newServer() *mcp.Server {
 			return endpoint{method: "POST", path: p}, err
 		})
 
-	addTool(s, &mcp.Tool{Name: "archive_agent", Description: "Archive an agent. Reversible from the Cursor dashboard or API."},
+	addTool(s, &mcp.Tool{Name: "archive_agent", Description: "Archive an agent. Reversible from the Cursor dashboard or API.", Annotations: nonDestructive},
 		func(in agentRef) (endpoint, error) {
 			p, err := agentPath(in.AgentID, "archive")
 			return endpoint{method: "POST", path: p}, err
