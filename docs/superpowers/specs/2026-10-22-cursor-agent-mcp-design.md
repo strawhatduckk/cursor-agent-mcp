@@ -38,7 +38,7 @@ One function: `call(ctx, key string, e endpoint) (string, error)` where `endpoin
 
 ## Tools
 
-Typed input structs (schema inferred by the SDK); output is Cursor's JSON passed through as text content. GET tools carry `ReadOnlyHint`; mutating tools keep the MCP default (destructive), so clients can auto-approve reads only.
+Typed input structs (schema inferred by the SDK); output is Cursor's JSON passed through as text content. GET tools carry `ReadOnlyHint`. `create_agent`, `followup` and `archive_agent` set `DestructiveHint: false` (additive or reversible); `cancel_run` and `delete_agent` keep the MCP default (destructive).
 
 | Tool | Endpoint | Inputs (* required) |
 |---|---|---|
@@ -55,7 +55,7 @@ Typed input structs (schema inferred by the SDK); output is Cursor's JSON passed
 | `list_repositories` | GET /v1/repositories | — |
 | `me` | GET /v1/me | — |
 
-Body mapping for `create_agent`: `{"prompt":{"text":prompt}, "repos":[{"url","startingRef","prUrl"}] (only when repo_url set; pr_url without repo_url is rejected, since Cursor requires url on every repo entry), "model":{"id":model} (when set), "name", "mode", "autoCreatePR"}` — omit empty fields. Path segments built with `url.PathEscape`; empty, `.` and `..` ids are rejected before calling Cursor (an empty `agent_id` would otherwise turn `get_agent` into `list_agents`).
+Body mapping for `create_agent`: `{"prompt":{"text":prompt}, "repos":[{"url","startingRef","prUrl"}] (only when repo_url set; pr_url or starting_ref without repo_url is rejected rather than dropped, since Cursor requires url on every repo entry), "model":{"id":model,"params":[{"id","value"}...]} (when set; params from model_params sorted by id; model_params without model is rejected), "name", "mode", "autoCreatePR"}` — omit empty fields. Path segments built with `url.PathEscape`; empty, `.`, `..` ids and ids containing `/ \ ? # %` are rejected before calling Cursor, so an id can never reach a different endpoint (an empty `agent_id` would otherwise turn `get_agent` into `list_agents`).
 
 ## Docker
 
