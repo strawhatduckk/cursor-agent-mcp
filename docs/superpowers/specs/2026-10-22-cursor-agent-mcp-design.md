@@ -14,6 +14,7 @@ An MCP server, run locally in Docker, that lets an MCP client (e.g. Claude Code)
 
 - `mcp.NewStreamableHTTPHandler(getServer, &mcp.StreamableHTTPOptions{Stateless: true})` mounted at `/mcp`, listening on `:8080`.
 - Run: `docker run --rm -p 127.0.0.1:8080:8080 -e CURSOR_API_KEY cursor-agent-mcp`. Publish on 127.0.0.1 only: in env-key mode anyone reaching the port uses the key.
+- Host header must be `localhost`, `127.0.0.1` or `::1` (403 otherwise). The SDK's DNS-rebinding check only runs on loopback connections, which never happen inside Docker.
 - Client: `claude mcp add --transport http cursor http://localhost:8080/mcp [--header "Authorization: Bearer <key>"]`.
 
 ## API key resolution
