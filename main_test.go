@@ -183,7 +183,8 @@ func TestRejectsBadInput(t *testing.T) {
 		{"get_agent", map[string]any{"agent_id": "a%2Fb"}, "invalid id"},
 		{"cancel_run", map[string]any{"agent_id": "bc-1", "run_id": "r?x#y"}, "invalid id"},
 		{"get_run", map[string]any{"agent_id": "bc-1", "run_id": ""}, "invalid id"},
-		{"create_agent", map[string]any{"prompt": "x", "pr_url": "https://github.com/o/r/pull/1"}, "pr_url requires repo_url"},
+		{"create_agent", map[string]any{"prompt": "x", "pr_url": "https://github.com/o/r/pull/1"}, "require repo_url"},
+		{"create_agent", map[string]any{"prompt": "x", "starting_ref": "main"}, "require repo_url"},
 		{"create_agent", map[string]any{"prompt": "x", "model_params": map[string]any{"effort": "high"}}, "model_params requires model"},
 	}
 	for _, c := range cases {

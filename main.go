@@ -146,7 +146,7 @@ type runRef struct {
 type createAgentIn struct {
 	Prompt       string            `json:"prompt" jsonschema:"task for the agent"`
 	RepoURL      string            `json:"repo_url,omitempty" jsonschema:"repository URL, e.g. https://github.com/org/repo; omit for a no-repo agent"`
-	StartingRef  string            `json:"starting_ref,omitempty" jsonschema:"branch or commit SHA to start from"`
+	StartingRef  string            `json:"starting_ref,omitempty" jsonschema:"branch or commit SHA to start from; requires repo_url"`
 	PrURL        string            `json:"pr_url,omitempty" jsonschema:"existing PR to work on; requires repo_url and overrides starting_ref"`
 	Model        string            `json:"model,omitempty" jsonschema:"model id from list_models; omit for the default"`
 	ModelParams  map[string]string `json:"model_params,omitempty" jsonschema:"per-model params from list_models as id to value, e.g. effort to high; requires model"`
@@ -207,8 +207,8 @@ func newServer() *mcp.Server {
 
 	addTool(s, &mcp.Tool{Name: "create_agent", Description: "Start a Cursor cloud agent, optionally on a repo. Returns the agent and its first run; poll get_run for status, result, branch and PR.", Annotations: nonDestructive},
 		func(in createAgentIn) (endpoint, error) {
-			if in.PrURL != "" && in.RepoURL == "" {
-				return endpoint{}, errors.New("pr_url requires repo_url")
+			if (in.PrURL != "" || in.StartingRef != "") && in.RepoURL == "" {
+				return endpoint{}, errors.New("pr_url and starting_ref require repo_url")
 			}
 			if len(in.ModelParams) > 0 && in.Model == "" {
 				return endpoint{}, errors.New("model_params requires model")
