@@ -137,8 +137,8 @@ type agentRef struct {
 }
 
 type runRef struct {
-	AgentID string `json:"agent_id" jsonschema:"agent id, e.g. bc-..."`
-	RunID   string `json:"run_id"`
+	agentRef
+	RunID string `json:"run_id"`
 }
 
 type createAgentIn struct {
@@ -160,15 +160,15 @@ type listAgentsIn struct {
 }
 
 type followupIn struct {
-	AgentID string `json:"agent_id" jsonschema:"agent id, e.g. bc-..."`
-	Prompt  string `json:"prompt" jsonschema:"follow-up instruction"`
-	Mode    string `json:"mode,omitempty" jsonschema:"agent (default) or plan"`
+	agentRef
+	Prompt string `json:"prompt" jsonschema:"follow-up instruction"`
+	Mode   string `json:"mode,omitempty" jsonschema:"agent (default) or plan"`
 }
 
 type listRunsIn struct {
-	AgentID string `json:"agent_id" jsonschema:"agent id, e.g. bc-..."`
-	Limit   int    `json:"limit,omitempty" jsonschema:"page size, default 20, max 100"`
-	Cursor  string `json:"cursor,omitempty" jsonschema:"nextCursor from the previous page"`
+	agentRef
+	Limit  int    `json:"limit,omitempty" jsonschema:"page size, default 20, max 100"`
+	Cursor string `json:"cursor,omitempty" jsonschema:"nextCursor from the previous page"`
 }
 
 // agentPath builds /v1/agents/{segs...}. Empty, dot and path/URL-separator
