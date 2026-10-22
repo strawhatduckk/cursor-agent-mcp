@@ -28,16 +28,16 @@ The key is never logged.
 
 ## Cursor client
 
-One function: `call(ctx, key, method, path string, query url.Values, body any) (string, error)`.
+One function: `call(ctx, key string, e endpoint) (string, error)` where `endpoint` is `{method, path, query url.Values, body any}`.
 
-- `net/http`, 30s timeout, `Authorization: Bearer <key>`, JSON body when `body != nil`.
+- `net/http`, 2 minute timeout (`list_repositories` can take tens of seconds), `Authorization: Bearer <key>`, JSON body when `body != nil`.
 - Base URL `https://api.cursor.com` in a package var (tests override it).
 - 2xx → raw response body text. Non-2xx → error `cursor <status>: <body>` so the model sees codes like `agent_busy`, `run_not_cancellable`.
 - Tool handlers turn errors into `CallToolResult{IsError: true}` with the error text.
 
 ## Tools
 
-Typed input structs (schema inferred by the SDK); output is Cursor's JSON passed through as text content.
+Typed input structs (schema inferred by the SDK); output is Cursor's JSON passed through as text content. GET tools carry `ReadOnlyHint`; mutating tools keep the MCP default (destructive), so clients can auto-approve reads only.
 
 | Tool | Endpoint | Inputs (* required) |
 |---|---|---|
@@ -49,12 +49,12 @@ Typed input structs (schema inferred by the SDK); output is Cursor's JSON passed
 | `get_run` | GET /v1/agents/{id}/runs/{runId} | `agent_id`*, `run_id`* |
 | `cancel_run` | POST /v1/agents/{id}/runs/{runId}/cancel | `agent_id`*, `run_id`* |
 | `archive_agent` | POST /v1/agents/{id}/archive | `agent_id`* |
-| `delete_agent` | DELETE /v1/agents/{id} | `agent_id`* (DestructiveHint) |
+| `delete_agent` | DELETE /v1/agents/{id} | `agent_id`* |
 | `list_models` | GET /v1/models | — |
 | `list_repositories` | GET /v1/repositories | — |
 | `me` | GET /v1/me | — |
 
-Body mapping for `create_agent`: `{"prompt":{"text":prompt}, "repos":[{"url","startingRef","prUrl"}] (only when repo_url or pr_url set), "model":{"id":model} (when set), "name", "mode", "autoCreatePR"}` — omit empty fields. Path segments built with `url.PathEscape`.
+Body mapping for `create_agent`: `{"prompt":{"text":prompt}, "repos":[{"url","startingRef","prUrl"}] (only when repo_url set; pr_url without repo_url is rejected, since Cursor requires url on every repo entry), "model":{"id":model} (when set), "name", "mode", "autoCreatePR"}` — omit empty fields. Path segments built with `url.PathEscape`; empty, `.` and `..` ids are rejected before calling Cursor (an empty `agent_id` would otherwise turn `get_agent` into `list_agents`).
 
 ## Docker
 
