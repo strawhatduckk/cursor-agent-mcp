@@ -242,3 +242,17 @@ func TestDestructiveHints(t *testing.T) {
 		}
 	}
 }
+
+// The README tells clients to use localhost, so the allowlist must let the
+// local names through (anything but 403; the SDK may still reject the body).
+func TestAllowsLocalHost(t *testing.T) {
+	for _, host := range []string{"localhost:8080", "127.0.0.1:8080", "[::1]:8080"} {
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{}`))
+		req.Host = host
+		rec := httptest.NewRecorder()
+		handler().ServeHTTP(rec, req)
+		if rec.Code == http.StatusForbidden {
+			t.Errorf("Host %q: got 403, want allowed", host)
+		}
+	}
+}
