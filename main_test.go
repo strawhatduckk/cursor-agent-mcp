@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -111,4 +113,86 @@ func TestCursorErrorIsToolError(t *testing.T) {
 	if !res.IsError || !strings.Contains(text(res), "409") || !strings.Contains(text(res), "agent_busy") {
 		t.Fatalf("want 409 agent_busy tool error, got IsError=%v %q", res.IsError, text(res))
 	}
+}
+
+func TestToolRoutes(t *testing.T) {
+	cases := []struct {
+		tool                string
+		args                map[string]any
+		method, path, query string
+		body                string // JSON, compared structurally; "" means no body
+	}{
+		{"create_agent", map[string]any{"prompt": "fix bug", "repo_url": "https://github.com/o/r", "starting_ref": "main", "model": "gpt-5", "name": "n", "mode": "plan", "auto_create_pr": true},
+			"POST", "/v1/agents", "",
+			`{"prompt":{"text":"fix bug"},"repos":[{"url":"https://github.com/o/r","startingRef":"main"}],"model":{"id":"gpt-5"},"name":"n","mode":"plan","autoCreatePR":true}`},
+		{"create_agent", map[string]any{"prompt": "review", "repo_url": "https://github.com/o/r", "pr_url": "https://github.com/o/r/pull/1"},
+			"POST", "/v1/agents", "",
+			`{"prompt":{"text":"review"},"repos":[{"url":"https://github.com/o/r","prUrl":"https://github.com/o/r/pull/1"}]}`},
+		{"create_agent", map[string]any{"prompt": "hi"}, "POST", "/v1/agents", "", `{"prompt":{"text":"hi"}}`},
+		{"list_agents", map[string]any{"limit": 5, "cursor": "c1", "pr_url": "https://github.com/o/r/pull/1", "include_archived": false},
+			"GET", "/v1/agents", "cursor=c1&includeArchived=false&limit=5&prUrl=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F1", ""},
+		{"list_agents", nil, "GET", "/v1/agents", "", ""},
+		{"get_agent", map[string]any{"agent_id": "bc-1"}, "GET", "/v1/agents/bc-1", "", ""},
+		{"get_agent", map[string]any{"agent_id": "a/b?c"}, "GET", "/v1/agents/a%2Fb%3Fc", "", ""},
+		{"followup", map[string]any{"agent_id": "bc-1", "prompt": "more", "mode": "plan"},
+			"POST", "/v1/agents/bc-1/runs", "", `{"prompt":{"text":"more"},"mode":"plan"}`},
+		{"list_runs", map[string]any{"agent_id": "bc-1", "limit": 2}, "GET", "/v1/agents/bc-1/runs", "limit=2", ""},
+		{"get_run", map[string]any{"agent_id": "bc-1", "run_id": "run-1"}, "GET", "/v1/agents/bc-1/runs/run-1", "", ""},
+		{"cancel_run", map[string]any{"agent_id": "bc-1", "run_id": "run-1"}, "POST", "/v1/agents/bc-1/runs/run-1/cancel", "", ""},
+		{"archive_agent", map[string]any{"agent_id": "bc-1"}, "POST", "/v1/agents/bc-1/archive", "", ""},
+		{"delete_agent", map[string]any{"agent_id": "bc-1"}, "DELETE", "/v1/agents/bc-1", "", ""},
+		{"list_models", nil, "GET", "/v1/models", "", ""},
+		{"list_repositories", nil, "GET", "/v1/repositories", "", ""},
+		{"me", nil, "GET", "/v1/me", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.tool, func(t *testing.T) {
+			t.Setenv("CURSOR_API_KEY", "k")
+			got := fakeCursor(t, 200, `{"ok":true}`)
+			res := callTool(t, "", c.tool, c.args)
+			if res.IsError {
+				t.Fatalf("unexpected error: %s", text(res))
+			}
+			if got.method != c.method || got.path != c.path || got.query != c.query {
+				t.Errorf("got %s %s?%s, want %s %s?%s", got.method, got.path, got.query, c.method, c.path, c.query)
+			}
+			if !jsonEqual(got.body, c.body) {
+				t.Errorf("body = %s, want %s", got.body, c.body)
+			}
+		})
+	}
+}
+
+func TestRejectsBadInput(t *testing.T) {
+	cases := []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"get_agent", map[string]any{"agent_id": ""}, "invalid id"},
+		{"delete_agent", map[string]any{"agent_id": ".."}, "invalid id"},
+		{"get_run", map[string]any{"agent_id": "bc-1", "run_id": ""}, "invalid id"},
+		{"create_agent", map[string]any{"prompt": "x", "pr_url": "https://github.com/o/r/pull/1"}, "pr_url requires repo_url"},
+	}
+	for _, c := range cases {
+		t.Run(c.tool, func(t *testing.T) {
+			t.Setenv("CURSOR_API_KEY", "k")
+			got := fakeCursor(t, 200, `{}`)
+			res := callTool(t, "", c.tool, c.args)
+			if !res.IsError || !strings.Contains(text(res), c.want) {
+				t.Fatalf("want error containing %q, got IsError=%v %q", c.want, res.IsError, text(res))
+			}
+			if got.method != "" {
+				t.Errorf("Cursor was called: %s %s", got.method, got.path)
+			}
+		})
+	}
+}
+
+func jsonEqual(a, b string) bool {
+	if a == "" || b == "" {
+		return a == b
+	}
+	var x, y any
+	return json.Unmarshal([]byte(a), &x) == nil && json.Unmarshal([]byte(b), &y) == nil && reflect.DeepEqual(x, y)
 }

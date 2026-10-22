@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,11 +113,169 @@ func addTool[In any](s *mcp.Server, t *mcp.Tool, route func(In) (endpoint, error
 
 type noInput struct{}
 
+type agentRef struct {
+	AgentID string `json:"agent_id" jsonschema:"agent id, e.g. bc-..."`
+}
+
+type runRef struct {
+	AgentID string `json:"agent_id" jsonschema:"agent id, e.g. bc-..."`
+	RunID   string `json:"run_id"`
+}
+
+type createAgentIn struct {
+	Prompt       string `json:"prompt" jsonschema:"task for the agent"`
+	RepoURL      string `json:"repo_url,omitempty" jsonschema:"repository URL, e.g. https://github.com/org/repo; omit for a no-repo agent"`
+	StartingRef  string `json:"starting_ref,omitempty" jsonschema:"branch or commit SHA to start from"`
+	PrURL        string `json:"pr_url,omitempty" jsonschema:"existing PR to work on; requires repo_url and overrides starting_ref"`
+	Model        string `json:"model,omitempty" jsonschema:"model id from list_models; omit for the default"`
+	Name         string `json:"name,omitempty" jsonschema:"display name, max 100 chars"`
+	Mode         string `json:"mode,omitempty" jsonschema:"agent (default) or plan"`
+	AutoCreatePR bool   `json:"auto_create_pr,omitempty" jsonschema:"open a PR when the run completes"`
+}
+
+type listAgentsIn struct {
+	Limit           int    `json:"limit,omitempty" jsonschema:"page size, default 20, max 100"`
+	Cursor          string `json:"cursor,omitempty" jsonschema:"nextCursor from the previous page"`
+	PrURL           string `json:"pr_url,omitempty" jsonschema:"only agents working on this PR"`
+	IncludeArchived *bool  `json:"include_archived,omitempty" jsonschema:"default true"`
+}
+
+type followupIn struct {
+	AgentID string `json:"agent_id" jsonschema:"agent id, e.g. bc-..."`
+	Prompt  string `json:"prompt" jsonschema:"follow-up instruction"`
+	Mode    string `json:"mode,omitempty" jsonschema:"agent (default) or plan"`
+}
+
+type listRunsIn struct {
+	AgentID string `json:"agent_id" jsonschema:"agent id, e.g. bc-..."`
+	Limit   int    `json:"limit,omitempty" jsonschema:"page size, default 20, max 100"`
+	Cursor  string `json:"cursor,omitempty" jsonschema:"nextCursor from the previous page"`
+}
+
+// agentPath builds /v1/agents/{segs...} with each segment escaped. Empty and
+// dot segments are rejected so get_agent("") can't turn into list_agents.
+func agentPath(segs ...string) (string, error) {
+	p := "/v1/agents"
+	for _, s := range segs {
+		if s == "" || s == "." || s == ".." {
+			return "", fmt.Errorf("invalid id %q", s)
+		}
+		p += "/" + url.PathEscape(s)
+	}
+	return p, nil
+}
+
+func pageQuery(limit int, cursor string) url.Values {
+	q := url.Values{}
+	if limit > 0 {
+		q.Set("limit", strconv.Itoa(limit))
+	}
+	if cursor != "" {
+		q.Set("cursor", cursor)
+	}
+	return q
+}
+
 func newServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "cursor-agent-mcp", Version: "0.1.0"}, nil)
 
 	addTool(s, &mcp.Tool{Name: "me", Description: "Show info about the Cursor API key in use.", Annotations: readOnly},
 		func(noInput) (endpoint, error) { return endpoint{method: "GET", path: "/v1/me"}, nil })
+
+	addTool(s, &mcp.Tool{Name: "create_agent", Description: "Start a Cursor cloud agent, optionally on a repo. Returns the agent and its first run; poll get_run for status, result, branch and PR."},
+		func(in createAgentIn) (endpoint, error) {
+			if in.PrURL != "" && in.RepoURL == "" {
+				return endpoint{}, errors.New("pr_url requires repo_url")
+			}
+			body := map[string]any{"prompt": map[string]string{"text": in.Prompt}}
+			if in.RepoURL != "" {
+				repo := map[string]string{"url": in.RepoURL}
+				if in.StartingRef != "" {
+					repo["startingRef"] = in.StartingRef
+				}
+				if in.PrURL != "" {
+					repo["prUrl"] = in.PrURL
+				}
+				body["repos"] = []map[string]string{repo}
+			}
+			if in.Model != "" {
+				body["model"] = map[string]string{"id": in.Model}
+			}
+			if in.Name != "" {
+				body["name"] = in.Name
+			}
+			if in.Mode != "" {
+				body["mode"] = in.Mode
+			}
+			if in.AutoCreatePR {
+				body["autoCreatePR"] = true
+			}
+			return endpoint{method: "POST", path: "/v1/agents", body: body}, nil
+		})
+
+	addTool(s, &mcp.Tool{Name: "list_agents", Description: "List agents, newest first. Pass nextCursor back as cursor for the next page.", Annotations: readOnly},
+		func(in listAgentsIn) (endpoint, error) {
+			q := pageQuery(in.Limit, in.Cursor)
+			if in.PrURL != "" {
+				q.Set("prUrl", in.PrURL)
+			}
+			if in.IncludeArchived != nil {
+				q.Set("includeArchived", strconv.FormatBool(*in.IncludeArchived))
+			}
+			return endpoint{method: "GET", path: "/v1/agents", query: q}, nil
+		})
+
+	addTool(s, &mcp.Tool{Name: "get_agent", Description: "Get an agent's metadata (status ACTIVE, IDLE or ARCHIVED).", Annotations: readOnly},
+		func(in agentRef) (endpoint, error) {
+			p, err := agentPath(in.AgentID)
+			return endpoint{method: "GET", path: p}, err
+		})
+
+	addTool(s, &mcp.Tool{Name: "followup", Description: "Send a follow-up prompt to an agent, starting a new run. Fails with agent_busy while a run is active."},
+		func(in followupIn) (endpoint, error) {
+			p, err := agentPath(in.AgentID, "runs")
+			body := map[string]any{"prompt": map[string]string{"text": in.Prompt}}
+			if in.Mode != "" {
+				body["mode"] = in.Mode
+			}
+			return endpoint{method: "POST", path: p, body: body}, err
+		})
+
+	addTool(s, &mcp.Tool{Name: "list_runs", Description: "List an agent's runs.", Annotations: readOnly},
+		func(in listRunsIn) (endpoint, error) {
+			p, err := agentPath(in.AgentID, "runs")
+			return endpoint{method: "GET", path: p, query: pageQuery(in.Limit, in.Cursor)}, err
+		})
+
+	addTool(s, &mcp.Tool{Name: "get_run", Description: "Get a run's status; finished runs include result, durationMs and git branches/PR URLs.", Annotations: readOnly},
+		func(in runRef) (endpoint, error) {
+			p, err := agentPath(in.AgentID, "runs", in.RunID)
+			return endpoint{method: "GET", path: p}, err
+		})
+
+	addTool(s, &mcp.Tool{Name: "cancel_run", Description: "Cancel an active run. Cancellation is permanent."},
+		func(in runRef) (endpoint, error) {
+			p, err := agentPath(in.AgentID, "runs", in.RunID, "cancel")
+			return endpoint{method: "POST", path: p}, err
+		})
+
+	addTool(s, &mcp.Tool{Name: "archive_agent", Description: "Archive an agent. Reversible from the Cursor dashboard or API."},
+		func(in agentRef) (endpoint, error) {
+			p, err := agentPath(in.AgentID, "archive")
+			return endpoint{method: "POST", path: p}, err
+		})
+
+	addTool(s, &mcp.Tool{Name: "delete_agent", Description: "Permanently delete an agent. Cannot be undone."},
+		func(in agentRef) (endpoint, error) {
+			p, err := agentPath(in.AgentID)
+			return endpoint{method: "DELETE", path: p}, err
+		})
+
+	addTool(s, &mcp.Tool{Name: "list_models", Description: "List model ids usable as create_agent's model.", Annotations: readOnly},
+		func(noInput) (endpoint, error) { return endpoint{method: "GET", path: "/v1/models"}, nil })
+
+	addTool(s, &mcp.Tool{Name: "list_repositories", Description: "List GitHub repos Cursor can access. Slow (tens of seconds) and rate limited to 1 call per minute.", Annotations: readOnly},
+		func(noInput) (endpoint, error) { return endpoint{method: "GET", path: "/v1/repositories"}, nil })
 
 	return s
 }
