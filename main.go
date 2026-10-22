@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -142,14 +144,15 @@ type runRef struct {
 }
 
 type createAgentIn struct {
-	Prompt       string `json:"prompt" jsonschema:"task for the agent"`
-	RepoURL      string `json:"repo_url,omitempty" jsonschema:"repository URL, e.g. https://github.com/org/repo; omit for a no-repo agent"`
-	StartingRef  string `json:"starting_ref,omitempty" jsonschema:"branch or commit SHA to start from"`
-	PrURL        string `json:"pr_url,omitempty" jsonschema:"existing PR to work on; requires repo_url and overrides starting_ref"`
-	Model        string `json:"model,omitempty" jsonschema:"model id from list_models; omit for the default"`
-	Name         string `json:"name,omitempty" jsonschema:"display name, max 100 chars"`
-	Mode         string `json:"mode,omitempty" jsonschema:"agent (default) or plan"`
-	AutoCreatePR bool   `json:"auto_create_pr,omitempty" jsonschema:"open a PR when the run completes"`
+	Prompt       string            `json:"prompt" jsonschema:"task for the agent"`
+	RepoURL      string            `json:"repo_url,omitempty" jsonschema:"repository URL, e.g. https://github.com/org/repo; omit for a no-repo agent"`
+	StartingRef  string            `json:"starting_ref,omitempty" jsonschema:"branch or commit SHA to start from"`
+	PrURL        string            `json:"pr_url,omitempty" jsonschema:"existing PR to work on; requires repo_url and overrides starting_ref"`
+	Model        string            `json:"model,omitempty" jsonschema:"model id from list_models; omit for the default"`
+	ModelParams  map[string]string `json:"model_params,omitempty" jsonschema:"per-model params from list_models as id to value, e.g. effort to high; requires model"`
+	Name         string            `json:"name,omitempty" jsonschema:"display name, max 100 chars"`
+	Mode         string            `json:"mode,omitempty" jsonschema:"agent (default) or plan"`
+	AutoCreatePR bool              `json:"auto_create_pr,omitempty" jsonschema:"open a PR when the run completes"`
 }
 
 type listAgentsIn struct {
@@ -207,6 +210,9 @@ func newServer() *mcp.Server {
 			if in.PrURL != "" && in.RepoURL == "" {
 				return endpoint{}, errors.New("pr_url requires repo_url")
 			}
+			if len(in.ModelParams) > 0 && in.Model == "" {
+				return endpoint{}, errors.New("model_params requires model")
+			}
 			body := map[string]any{"prompt": map[string]string{"text": in.Prompt}}
 			if in.RepoURL != "" {
 				repo := map[string]string{"url": in.RepoURL}
@@ -219,7 +225,15 @@ func newServer() *mcp.Server {
 				body["repos"] = []map[string]string{repo}
 			}
 			if in.Model != "" {
-				body["model"] = map[string]string{"id": in.Model}
+				model := map[string]any{"id": in.Model}
+				var params []map[string]string
+				for _, id := range slices.Sorted(maps.Keys(in.ModelParams)) {
+					params = append(params, map[string]string{"id": id, "value": in.ModelParams[id]})
+				}
+				if params != nil {
+					model["params"] = params
+				}
+				body["model"] = model
 			}
 			if in.Name != "" {
 				body["name"] = in.Name

@@ -42,7 +42,7 @@ Typed input structs (schema inferred by the SDK); output is Cursor's JSON passed
 
 | Tool | Endpoint | Inputs (* required) |
 |---|---|---|
-| `create_agent` | POST /v1/agents | `prompt`*, `repo_url`, `starting_ref`, `pr_url`, `model`, `name`, `mode` (agent\|plan), `auto_create_pr` |
+| `create_agent` | POST /v1/agents | `prompt`*, `repo_url`, `starting_ref`, `pr_url`, `model`, `model_params` (map → `model.params[{id,value}]`, requires `model`), `name`, `mode` (agent\|plan), `auto_create_pr` |
 | `list_agents` | GET /v1/agents | `limit`, `cursor`, `pr_url`, `include_archived` |
 | `get_agent` | GET /v1/agents/{id} | `agent_id`* |
 | `followup` | POST /v1/agents/{id}/runs | `agent_id`*, `prompt`*, `mode` |

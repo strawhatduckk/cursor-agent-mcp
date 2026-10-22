@@ -135,6 +135,9 @@ func TestToolRoutes(t *testing.T) {
 			"POST", "/v1/agents", "",
 			`{"prompt":{"text":"review"},"repos":[{"url":"https://github.com/o/r","prUrl":"https://github.com/o/r/pull/1"}]}`},
 		{"create_agent", map[string]any{"prompt": "hi"}, "POST", "/v1/agents", "", `{"prompt":{"text":"hi"}}`},
+		{"create_agent", map[string]any{"prompt": "hi", "model": "claude-opus-5-5", "model_params": map[string]any{"effort": "high", "context": "200k"}},
+			"POST", "/v1/agents", "",
+			`{"prompt":{"text":"hi"},"model":{"id":"claude-opus-5-5","params":[{"id":"context","value":"200k"},{"id":"effort","value":"high"}]}}`},
 		{"list_agents", map[string]any{"limit": 5, "cursor": "c1", "pr_url": "https://github.com/o/r/pull/1", "include_archived": false},
 			"GET", "/v1/agents", "cursor=c1&includeArchived=false&limit=5&prUrl=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F1", ""},
 		{"list_agents", nil, "GET", "/v1/agents", "", ""},
@@ -181,6 +184,7 @@ func TestRejectsBadInput(t *testing.T) {
 		{"cancel_run", map[string]any{"agent_id": "bc-1", "run_id": "r?x#y"}, "invalid id"},
 		{"get_run", map[string]any{"agent_id": "bc-1", "run_id": ""}, "invalid id"},
 		{"create_agent", map[string]any{"prompt": "x", "pr_url": "https://github.com/o/r/pull/1"}, "pr_url requires repo_url"},
+		{"create_agent", map[string]any{"prompt": "x", "model_params": map[string]any{"effort": "high"}}, "model_params requires model"},
 	}
 	for _, c := range cases {
 		t.Run(c.tool, func(t *testing.T) {
