@@ -30,6 +30,22 @@ claude mcp add --transport http cursor http://localhost:8080/mcp
 claude mcp add --transport http cursor http://localhost:8080/mcp --header "Authorization: Bearer $CURSOR_API_KEY"
 ```
 
+Codex:
+
+```sh
+codex mcp add cursor --url http://localhost:8080/mcp
+# or have Codex send $CURSOR_API_KEY as the bearer token:
+codex mcp add cursor --url http://localhost:8080/mcp --bearer-token-env-var CURSOR_API_KEY
+```
+
+Or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.cursor]
+url = "http://localhost:8080/mcp"
+bearer_token_env_var = "CURSOR_API_KEY" # optional
+```
+
 Other clients (`mcp.json`):
 
 ```json
@@ -46,6 +62,8 @@ Other clients (`mcp.json`):
 ## Tools
 
 `create_agent`, `list_agents`, `get_agent`, `followup`, `list_runs`, `get_run`, `cancel_run`, `archive_agent`, `delete_agent`, `list_models`, `list_repositories`, `me`. Each maps to one `/v1` endpoint and returns Cursor's JSON as-is. Poll `get_run` to follow a run.
+
+Agents started through this server (the API) don't show up in the Cursor UI at https://cursor.com/agents. Track them with `list_agents`, `get_agent` and `get_run`.
 
 ## Develop
 
