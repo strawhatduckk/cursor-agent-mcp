@@ -9,7 +9,7 @@ docker build -t cursor-agent-mcp .
 docker run --rm -p 127.0.0.1:8080:8080 -e CURSOR_API_KEY cursor-agent-mcp
 ```
 
-Keep the `127.0.0.1:` prefix: with `CURSOR_API_KEY` set, anyone who can reach the port uses your key.
+Keep the `127.0.0.1:` prefix: with `CURSOR_API_KEY` set, anyone who can reach the port uses your key. Requests must use `localhost`, `127.0.0.1` or `[::1]` as the host (DNS rebinding protection), so `host.docker.internal` or compose service names get a 403.
 
 ## API key
 

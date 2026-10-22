@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -32,9 +33,23 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
+// handler refuses non-local Host headers to block DNS rebinding. The SDK's own
+// check only runs when the connection arrives on loopback, which it never
+// does inside Docker.
 func handler() http.Handler {
 	s := newServer()
-	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{Stateless: true})
+	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{Stateless: true})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 type endpoint struct {

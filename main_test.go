@@ -196,3 +196,17 @@ func jsonEqual(a, b string) bool {
 	var x, y any
 	return json.Unmarshal([]byte(a), &x) == nil && json.Unmarshal([]byte(b), &y) == nil && reflect.DeepEqual(x, y)
 }
+
+// DNS rebinding: inside Docker the SDK's loopback-only Host check never runs,
+// so the handler itself must refuse non-local Host headers.
+func TestRejectsNonLocalHost(t *testing.T) {
+	for _, host := range []string{"evil.example:8080", "evil.example", "192.168.1.5:8080"} {
+		req := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{}`))
+		req.Host = host
+		rec := httptest.NewRecorder()
+		handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("Host %q: status %d, want 403", host, rec.Code)
+		}
+	}
+}
