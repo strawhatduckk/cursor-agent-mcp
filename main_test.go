@@ -133,7 +133,6 @@ func TestToolRoutes(t *testing.T) {
 			"GET", "/v1/agents", "cursor=c1&includeArchived=false&limit=5&prUrl=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F1", ""},
 		{"list_agents", nil, "GET", "/v1/agents", "", ""},
 		{"get_agent", map[string]any{"agent_id": "bc-1"}, "GET", "/v1/agents/bc-1", "", ""},
-		{"get_agent", map[string]any{"agent_id": "a/b?c"}, "GET", "/v1/agents/a%2Fb%3Fc", "", ""},
 		{"followup", map[string]any{"agent_id": "bc-1", "prompt": "more", "mode": "plan"},
 			"POST", "/v1/agents/bc-1/runs", "", `{"prompt":{"text":"more"},"mode":"plan"}`},
 		{"list_runs", map[string]any{"agent_id": "bc-1", "limit": 2}, "GET", "/v1/agents/bc-1/runs", "limit=2", ""},
@@ -171,6 +170,9 @@ func TestRejectsBadInput(t *testing.T) {
 	}{
 		{"get_agent", map[string]any{"agent_id": ""}, "invalid id"},
 		{"delete_agent", map[string]any{"agent_id": ".."}, "invalid id"},
+		{"delete_agent", map[string]any{"agent_id": "a/../b"}, "invalid id"},
+		{"get_agent", map[string]any{"agent_id": "a%2Fb"}, "invalid id"},
+		{"cancel_run", map[string]any{"agent_id": "bc-1", "run_id": "r?x#y"}, "invalid id"},
 		{"get_run", map[string]any{"agent_id": "bc-1", "run_id": ""}, "invalid id"},
 		{"create_agent", map[string]any{"prompt": "x", "pr_url": "https://github.com/o/r/pull/1"}, "pr_url requires repo_url"},
 	}

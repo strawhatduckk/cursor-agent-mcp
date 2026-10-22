@@ -167,12 +167,13 @@ type listRunsIn struct {
 	Cursor  string `json:"cursor,omitempty" jsonschema:"nextCursor from the previous page"`
 }
 
-// agentPath builds /v1/agents/{segs...} with each segment escaped. Empty and
-// dot segments are rejected so get_agent("") can't turn into list_agents.
+// agentPath builds /v1/agents/{segs...}. Empty, dot and path/URL-separator
+// segments are rejected so an id can never reach a different endpoint (e.g.
+// get_agent("") turning into list_agents). Real ids are bc-<uuid>/run-<uuid>.
 func agentPath(segs ...string) (string, error) {
 	p := "/v1/agents"
 	for _, s := range segs {
-		if s == "" || s == "." || s == ".." {
+		if s == "" || s == "." || s == ".." || strings.ContainsAny(s, "/\\?#%") {
 			return "", fmt.Errorf("invalid id %q", s)
 		}
 		p += "/" + url.PathEscape(s)
